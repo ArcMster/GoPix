@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GoPix</title>
+<meta name="description" content="GoPix is a photo editor that runs in your browser and works offline. Crop, rotate, adjust and filter photos without uploading them anywhere.">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f3f3f3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12122a" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="GoPix">
+<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+:root{
+  color-scheme: light;
+  --stage:#cdcdcd; --panel:#f3f3f3; --raised:#ffffff; --line:#d2d2d2;
+  --ink:#1c1c1c; --muted:#5c5c5c; --accent:#9d4dff; --on-accent:#ffffff;
+  --brand:linear-gradient(100deg,#13b6ff 0%,#9d4dff 52%,#ff8a3d 100%);
+  --shade:rgba(0,0,0,.5);
+  --font:"Avenir Next","Segoe UI Variable Text","Segoe UI",system-ui,Roboto,"Helvetica Neue",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --stage:#23233a; --panel:#12122a; --raised:#22223f; --line:#33335a;
+    --ink:#ededed; --muted:#a4a4a4; --shade:rgba(0,0,0,.62);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:var(--font);font-size:15px;line-height:1.4;color:var(--ink);background:var(--panel);
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);
+  overflow:hidden;-webkit-tap-highlight-color:transparent;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+[hidden]{display:none !important}
+
+/* Top bar */
+.bar{display:flex;align-items:center;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px;letter-spacing:-.02em;margin-right:auto}
+.brand img{width:30px;height:30px;display:block;border-radius:7px}
+.brand em{font-style:normal;background:var(--brand);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tool{display:inline-flex;align-items:center;gap:6px;height:38px;min-width:38px;padding:0 9px;border:0;border-radius:8px;background:transparent}
+.tool svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tool:hover:not(:disabled){background:var(--raised)}
+.tool:disabled{opacity:.35;cursor:default}
+.tool .txt{display:none}
+.tool.primary{background:var(--brand);color:var(--on-accent);font-weight:600;padding:0 14px}
+.tool.primary:hover:not(:disabled){filter:brightness(1.08)}
+.tool.primary .txt{display:inline}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+body:not(.has-image) .needs-image{display:none}
+
+/* Stage */
+.stage{position:relative;background:var(--stage);display:grid;place-items:center;overflow:hidden;min-height:0}
+.stage.drop::after{content:"";position:absolute;inset:10px;border:2px dashed var(--accent);border-radius:10px;pointer-events:none}
+.frame{position:relative;overflow:hidden;box-shadow:0 2px 18px rgba(0,0,0,.28)}
+.frame canvas{display:block;width:100%;height:100%}
+
+/* Empty state: a viewfinder */
+.finder{position:relative;width:min(520px,calc(100% - 48px));aspect-ratio:3/2;display:grid;place-items:center;text-align:center;padding:28px}
+.finder i{position:absolute;width:34px;height:34px;border:3px solid var(--accent)}
+.finder i:nth-child(1){border-color:#13b6ff;top:0;left:0;border-right:0;border-bottom:0}
+.finder i:nth-child(2){border-color:#c04bf0;top:0;right:0;border-left:0;border-bottom:0}
+.finder i:nth-child(3){border-color:#7a5cff;bottom:0;left:0;border-right:0;border-top:0}
+.finder i:nth-child(4){border-color:#ff8a3d;bottom:0;right:0;border-left:0;border-top:0}
+.finder .hero{display:block;margin:0 auto 16px;width:84px;height:84px;border-radius:19px}
+.finder h1{font-size:clamp(20px,4.2vw,28px);line-height:1.15;letter-spacing:-.02em;margin:0 0 14px;font-weight:700}
+.finder p{margin:14px auto 0;color:var(--muted);max-width:34ch;font-size:14px}
+.big{height:46px;padding:0 22px;border:0;border-radius:10px;background:var(--brand);color:var(--on-accent);font-weight:600;font-size:16px}
+.big:hover{filter:brightness(1.08)}
+
+/* Crop box */
+.crop{position:absolute;box-shadow:0 0 0 9999px var(--shade);outline:1px solid rgba(255,255,255,.9);cursor:move;touch-action:none;
+  background:
+    linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,.4)) 33.33% 0/1px 100% no-repeat,
+    linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,.4)) 66.66% 0/1px 100% no-repeat,
+    linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,.4)) 0 33.33%/100% 1px no-repeat,
+    linear-gradient(rgba(255,255,255,.4),rgba(255,255,255,.4)) 0 66.66%/100% 1px no-repeat}
+.crop b{position:absolute;width:36px;height:36px;touch-action:none}
+.crop b::after{content:"";position:absolute;width:20px;height:20px;border:3px solid #fff;filter:drop-shadow(0 0 1px rgba(0,0,0,.7))}
+.crop b[data-h=nw]{left:0;top:0;cursor:nwse-resize}
+.crop b[data-h=nw]::after{left:0;top:0;border-right:0;border-bottom:0}
+.crop b[data-h=ne]{right:0;top:0;cursor:nesw-resize}
+.crop b[data-h=ne]::after{right:0;top:0;border-left:0;border-bottom:0}
+.crop b[data-h=sw]{left:0;bottom:0;cursor:nesw-resize}
+.crop b[data-h=sw]::after{left:0;bottom:0;border-right:0;border-top:0}
+.crop b[data-h=se]{right:0;bottom:0;cursor:nwse-resize}
+.crop b[data-h=se]::after{right:0;bottom:0;border-left:0;border-top:0}
+
+/* Panel */
+.panel{background:var(--panel);border-top:1px solid var(--line);display:flex;flex-direction:column;min-height:0;max-height:44dvh}
+.tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+.tabs button{flex:1;height:42px;padding:0;font-size:14px;border:0;background:transparent;color:var(--muted);font-weight:600;position:relative}
+.tabs button[aria-selected=true]{color:var(--ink)}
+.tabs button[aria-selected=true]::after{content:"";position:absolute;left:22%;right:22%;bottom:-1px;height:3px;background:var(--accent);border-radius:3px 3px 0 0}
+.pane{overflow:auto;padding:12px 16px 16px;min-height:0;overscroll-behavior:contain}
+
+.row{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:10px;margin-bottom:4px}
+.row label{font-size:14px}
+.row .val{border:0;background:transparent;color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px;padding:2px 4px;border-radius:5px;min-width:38px;text-align:right}
+.row .val:hover{color:var(--ink);background:var(--raised)}
+.row input{grid-column:1/-1}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;margin:0;background:transparent;--a:50%;--b:50%}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--line) var(--a),var(--accent) var(--a),var(--accent) var(--b),var(--line) var(--b))}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(to right,var(--line) var(--a),var(--accent) var(--a),var(--accent) var(--b),var(--line) var(--b))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--ink);border:3px solid var(--panel);margin-top:-8px}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--panel)}
+.quiet{border:1px solid var(--line);background:transparent;border-radius:8px;height:36px;padding:0 14px}
+.quiet:hover{background:var(--raised)}
+
+.looks{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:10px}
+.looks button{border:0;background:transparent;padding:0;text-align:center;font-size:12.5px;color:var(--muted)}
+.looks canvas{display:block;width:100%;aspect-ratio:1;border-radius:8px;margin-bottom:4px;outline:3px solid transparent;outline-offset:-3px}
+.looks button[aria-pressed=true]{color:var(--ink);font-weight:600}
+.looks button[aria-pressed=true] canvas{outline-color:var(--accent)}
+
+.group{margin-bottom:16px}
+.group h2{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{border:1px solid var(--line);background:transparent;border-radius:999px;height:34px;padding:0 13px;font-size:13.5px}
+.chips button[aria-pressed=true]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.chips button svg{width:18px;height:18px;vertical-align:-4px;margin-right:5px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.apply{width:100%;height:42px;border:0;border-radius:9px;background:var(--brand);color:var(--on-accent);font-weight:600}
+.apply:hover{filter:brightness(1.08)}
+.apply:disabled{opacity:.55;cursor:default}
+.swatches{display:flex;flex-wrap:wrap;gap:9px;padding:2px}
+.swatches button,.swatches .pick{width:32px;height:32px;border-radius:50%;border:1px solid var(--line);padding:0;background:var(--c);flex:none}
+.swatches button[aria-pressed=true]{outline:3px solid var(--accent);outline-offset:2px}
+.swatches .pick{background:conic-gradient(#f33,#fc0,#3c3,#0cc,#36f,#c3c,#f33);overflow:hidden;cursor:pointer;display:block}
+.swatches .pick input{opacity:0;width:100%;height:100%;border:0;padding:0;cursor:pointer}
+textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:var(--raised);color:inherit;font:inherit;padding:8px 10px;resize:vertical;min-height:58px}
+.frame.touch canvas{touch-action:none}
+.frame.pen canvas{cursor:crosshair}
+.hint{color:var(--muted);font-size:13px;margin:10px 0 0}
+
+/* Save dialog */
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);padding:20px;width:min(380px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.55)}
+dialog h2{margin:0 0 4px;font-size:19px;letter-spacing:-.01em}
+dialog .dim{color:var(--muted);font-size:13px;margin:0 0 16px;font-variant-numeric:tabular-nums}
+.field{margin-bottom:14px}
+.field>label,.field>span{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+.field input[type=text]{width:100%;height:40px;border:1px solid var(--line);border-radius:8px;background:var(--raised);padding:0 10px}
+.acts{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+.acts .apply{width:auto;padding:0 18px}
+.stack{flex-direction:column;align-items:stretch}
+.stack .apply,.stack .quiet{width:100%;height:42px}
+@media (max-width:480px){.brand span{display:none}}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;max-width:calc(100vw - 32px);text-align:center;z-index:10}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+
+@media (min-width:860px){
+  body{grid-template-columns:minmax(0,1fr) 320px;grid-template-rows:auto minmax(0,1fr)}
+  .bar{grid-column:1/-1}
+  body:not(.has-image) .stage{grid-column:1/-1}
+  .panel{border-top:0;border-left:1px solid var(--line);max-height:none}
+  .tool .txt{display:inline}
+  .pane{padding:16px 18px 20px}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand">
+    <img src="icons/icon-64.png" alt="" width="30" height="30">
+    <span><em>Go</em>Pix</span>
+  </div>
+  <button class="tool" id="open" title="Open photo (Ctrl+O)" aria-label="Open photo"><svg viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 10v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18z"/></svg><span class="txt">Open</span></button>
+  <span class="sep needs-image"></span>
+  <button class="tool needs-image" id="undo" title="Undo (Ctrl+Z)" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M8 5 4 9l4 4"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+  <button class="tool needs-image" id="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="m16 5 4 4-4 4"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+  <button class="tool needs-image" id="compare" title="Hold to see the original" aria-label="Hold to see the original"><svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M12 3v18"/></svg></button>
+  <button class="tool needs-image" id="reset" title="Remove all edits" aria-label="Remove all edits"><svg viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M4.6 9A8 8 0 1 1 4 12"/></svg></button>
+  <button class="tool" id="install" hidden title="Install GoPix on this device" aria-label="Install GoPix"><svg viewBox="0 0 24 24"><path d="M12 4v11M7.5 11l4.5 4.5 4.5-4.5M5 20h14"/></svg><span class="txt">Install</span></button>
+  <button class="tool needs-image" id="shareTop" title="Share photo" aria-label="Share photo"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"/><circle cx="17.5" cy="5.5" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="m8.2 10.8 7.1-4.1M8.2 13.2l7.1 4.1"/></svg></button>
+  <button class="tool primary needs-image" id="save" title="Save photo (Ctrl+S)">Save</button>
+</header>
+
+<main class="stage" id="stage">
+  <div class="finder" id="empty">
+    <i></i><i></i><i></i><i></i>
+    <div>
+      <img class="hero" src="icons/icon-192.png" alt="" width="84" height="84">
+      <h1>Open a photo to start editing</h1>
+      <button class="big" id="openBig">Open photo</button>
+      <p>Or drop one here, or paste it from the clipboard. Your photos stay on this device.</p>
+    </div>
+  </div>
+  <div class="frame" id="frame" hidden>
+    <canvas id="view"></canvas>
+    <div class="crop" id="crop" hidden><b data-h="nw"></b><b data-h="ne"></b><b data-h="sw"></b><b data-h="se"></b></div>
+  </div>
+</main>
+
+<aside class="panel needs-image" id="panel">
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="adjust" aria-selected="true">Adjust</button>
+    <button role="tab" data-tab="filters" aria-selected="false">Filters</button>
+    <button role="tab" data-tab="crop" aria-selected="false">Crop</button>
+    <button role="tab" data-tab="text" aria-selected="false">Text</button>
+    <button role="tab" data-tab="draw" aria-selected="false">Draw</button>
+  </div>
+  <div class="pane" id="pane-adjust" role="tabpanel">
+    <div id="sliders"></div>
+    <button class="quiet" id="resetAdj">Reset adjustments</button>
+  </div>
+  <div class="pane" id="pane-filters" role="tabpanel" hidden>
+    <div class="looks" id="looks"></div>
+  </div>
+  <div class="pane" id="pane-crop" role="tabpanel" hidden>
+    <div class="group">
+      <h2>Shape</h2>
+      <div class="chips" id="ratios">
+        <button data-r="free" aria-pressed="true">Free</button>
+        <button data-r="orig" aria-pressed="false">Original</button>
+        <button data-r="1" aria-pressed="false">1:1</button>
+        <button data-r="0.8" aria-pressed="false">4:5</button>
+        <button data-r="1.3333" aria-pressed="false">4:3</button>
+        <button data-r="1.7778" aria-pressed="false">16:9</button>
+        <button data-r="0.5625" aria-pressed="false">9:16</button>
+      </div>
+    </div>
+    <div class="group"><button class="apply" id="applyCrop">Crop photo</button></div>
+    <div class="group">
+      <h2>Rotate and flip</h2>
+      <div class="chips">
+        <button id="rotL"><svg viewBox="0 0 24 24"><path d="M4 5v5h5"/><path d="M4.5 10A8 8 0 1 1 5 15"/></svg>Left</button>
+        <button id="rotR"><svg viewBox="0 0 24 24"><path d="M20 5v5h-5"/><path d="M19.5 10A8 8 0 1 0 19 15"/></svg>Right</button>
+        <button id="flipH"><svg viewBox="0 0 24 24"><path d="M12 3v18M8 7l-5 5 5 5zM16 7l5 5-5 5z"/></svg>Flip sideways</button>
+        <button id="flipV"><svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l5-5 5 5zM7 16l5 5 5-5z"/></svg>Flip upside down</button>
+      </div>
+    </div>
+  </div>
+  <div class="pane" id="pane-text" role="tabpanel" hidden>
+    <div class="group"><button class="apply" id="addText">Add text</button></div>
+    <p class="hint" id="textHint" style="margin-top:0">Tap text on the photo to edit it. Drag it to move it.</p>
+    <div id="textEdit" hidden>
+      <div class="field"><label for="tText">Text</label><textarea id="tText" rows="2" placeholder="Type here"></textarea></div>
+      <div class="group"><h2>Font</h2><div class="chips" id="tFonts"></div></div>
+      <div class="group"><h2>Color</h2><div class="swatches" id="tColors"></div></div>
+      <div class="row"><label for="tSize">Size</label><span class="val">8</span><input type="range" id="tSize" min="2" max="40" value="8"></div>
+      <div class="row"><label for="tAngle">Angle</label><span class="val">0</span><input type="range" id="tAngle" min="-180" max="180" value="0"></div>
+      <div class="chips" style="margin-top:6px">
+        <button id="tBold" aria-pressed="true">Bold</button>
+        <button id="tShadow" aria-pressed="true">Shadow</button>
+        <button id="tDelete">Delete text</button>
+      </div>
+    </div>
+  </div>
+  <div class="pane" id="pane-draw" role="tabpanel" hidden>
+    <p class="hint" style="margin:0 0 14px">Write or draw on the photo with your finger, a pen or the mouse.</p>
+    <div class="group"><h2>Color</h2><div class="swatches" id="pColors"></div></div>
+    <div class="row"><label for="pSize">Thickness</label><span class="val">10</span><input type="range" id="pSize" min="2" max="60" value="10"></div>
+    <div class="chips" style="margin-top:6px">
+      <button id="pUndo">Undo last stroke</button>
+      <button id="pClear">Erase all drawing</button>
+    </div>
+  </div>
+</aside>
+
+<dialog id="saveDlg">
+  <h2>Save photo</h2>
+  <p class="dim" id="saveDim"></p>
+  <div class="field"><label for="fname">File name</label><input type="text" id="fname" autocomplete="off" spellcheck="false"></div>
+  <div class="field"><span>Format</span>
+    <div class="chips" id="formats">
+      <button data-f="image/jpeg" aria-pressed="true">JPEG</button>
+      <button data-f="image/png" aria-pressed="false">PNG</button>
+      <button data-f="image/webp" aria-pressed="false">WebP</button>
+    </div>
+  </div>
+  <div class="field" id="qField">
+    <div class="row"><label for="quality">Quality</label><span class="val" id="qVal">90</span>
+    <input type="range" id="quality" min="40" max="100" value="90"></div>
+  </div>
+  <div class="acts">
+    <button class="quiet" id="saveCancel">Cancel</button>
+    <button class="apply" id="saveGo">Save photo</button>
+  </div>
+</dialog>
+
+<dialog id="shareDlg">
+  <h2>Share photo</h2>
+  <p class="dim" id="shareMsg" style="font-size:14px"></p>
+  <div class="acts stack">
+    <button class="apply" id="shareGo">Share to apps</button>
+    <button class="quiet" id="shareCopy">Copy photo</button>
+    <button class="quiet" id="shareSave">Save photo instead</button>
+    <button class="quiet" id="shareClose">Close</button>
+  </div>
+</dialog>
+
+<input type="file" id="file" accept="image/*" hidden>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const MAX_SIDE = 4096, PREVIEW_SIDE = 1400, HISTORY = 24;
+
+const ADJ = [
+  {key:'exposure',   label:'Exposure',   min:-100, max:100},
+  {key:'contrast',   label:'Contrast',   min:-100, max:100},
+  {key:'saturation', label:'Saturation', min:-100, max:100},
+  {key:'warmth',     label:'Warmth',     min:-100, max:100},
+  {key:'tint',       label:'Tint',       min:-100, max:100},
+  {key:'fade',       label:'Fade',       min:0,    max:100},
+  {key:'vignette',   label:'Vignette',   min:0,    max:100},
+];
+const zero = () => ({exposure:0,contrast:0,saturation:0,warmth:0,tint:0,fade:0,vignette:0});
+const LOOKS = [
+  {id:'original', name:'Original', p:{}},
+  {id:'vivid',    name:'Vivid',    p:{contrast:18,saturation:35,exposure:4}},
+  {id:'warm',     name:'Warm',     p:{warmth:40,saturation:10,contrast:6}},
+  {id:'cool',     name:'Cool',     p:{warmth:-40,tint:-6,contrast:8}},
+  {id:'matte',    name:'Matte',    p:{fade:45,contrast:-12,saturation:-15}},
+  {id:'dusk',     name:'Dusk',     p:{warmth:22,tint:28,fade:25,contrast:10,vignette:30}},
+  {id:'film',     name:'Film',     p:{fade:22,warmth:14,saturation:-12,contrast:14,vignette:22}},
+  {id:'sepia',    name:'Sepia',    p:{saturation:-100,warmth:55,fade:18,contrast:6}},
+  {id:'mono',     name:'Mono',     p:{saturation:-100,contrast:10}},
+  {id:'noir',     name:'Noir',     p:{saturation:-100,contrast:48,exposure:-8,vignette:45}},
+];
+const lookById = id => LOOKS.find(l => l.id === id) || LOOKS[0];
+const FONTS = [
+  {id:'sans',   name:'Sans',       css:'system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif'},
+  {id:'serif',  name:'Serif',      css:'Georgia,"Times New Roman",serif'},
+  {id:'script', name:'Script',     css:'"Segoe Script","Snell Roundhand","Brush Script MT","Dancing Script",cursive'},
+  {id:'poster', name:'Poster',     css:'Impact,"Arial Black",Haettenschweiler,sans-serif'},
+  {id:'mono',   name:'Typewriter', css:'"Courier New",Courier,monospace'},
+];
+const COLORS = [['#ffffff','White'],['#111111','Black'],['#f5b800','Yellow'],['#e5383b','Red'],['#ff6fae','Pink'],['#2f80ed','Blue'],['#27ae60','Green']];
+const textDefaults = {font:'sans', color:'#ffffff', size:8, bold:true, shadow:true};
+const pen = {color:'#e5383b', size:10};
+let sel = -1, ptr = null;
+
+const stage = $('#stage'), frame = $('#frame'), view = $('#view'), cropEl = $('#crop');
+const vctx = view.getContext('2d', {willReadFrequently:true});
+
+let st = {base:null, adj:zero(), look:'original', items:[]};
+let original = null, origSmall = null, baseSmall = null;
+let hist = [], hi = -1;
+let mode = 'adjust', comparing = false, fileName = 'photo';
+let crop = {x:0,y:0,w:1,h:1}, ratio = 'free';
+
+/* ---------- pixel pipeline ---------- */
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+function effective(){
+  const p = {...st.adj}, l = lookById(st.look).p;
+  for (const k in l) p[k] += l[k];
+  return p;
+}
+const isNeutral = p => ADJ.every(a => a.key === 'vignette' || !p[a.key]);
+function processPixels(img, p){
+  const la = new Float32Array(256), lb = new Uint8ClampedArray(256);
+  const gain = Math.pow(2, clamp(p.exposure,-150,150)/100);
+  const c = clamp(p.contrast,-100,100)/100, f = c >= 0 ? 1 + c*1.2 : 1 + c*0.8;
+  const fd = clamp(p.fade,0,100)/100*70;
+  for (let i = 0; i < 256; i++){ la[i] = (i*gain - 128)*f + 128; lb[i] = fd + i*(1 - fd/255); }
+  const wr = clamp(p.warmth,-100,100)*0.35, tg = clamp(p.tint,-100,100)*0.3;
+  const s = 1 + clamp(p.saturation,-100,100)/100;
+  const d = img.data;
+  for (let i = 0, n = d.length; i < n; i += 4){
+    let r = la[d[i]], g = la[d[i+1]], b = la[d[i+2]];
+    const l = 0.2126*r + 0.7152*g + 0.0722*b;
+    r = l + (r-l)*s + wr + tg*0.5; g = l + (g-l)*s - tg; b = l + (b-l)*s - wr + tg*0.5;
+    d[i]   = lb[r < 0 ? 0 : r > 255 ? 255 : r|0];
+    d[i+1] = lb[g < 0 ? 0 : g > 255 ? 255 : g|0];
+    d[i+2] = lb[b < 0 ? 0 : b > 255 ? 255 : b|0];
+  }
+}
+function paint(ctx, src, sx, sy, sw, sh, w, h, p){
+  ctx.clearRect(0,0,w,h);
+  ctx.drawImage(src, sx, sy, sw, sh, 0, 0, w, h);
+  if (!isNeutral(p)){
+    const img = ctx.getImageData(0,0,w,h);
+    processPixels(img, p);
+    ctx.putImageData(img,0,0);
+  }
+  if (p.vignette > 0){
+    const r = Math.hypot(w,h)/2, g = ctx.createRadialGradient(w/2,h/2,r*0.45,w/2,h/2,r);
+    g.addColorStop(0,'rgba(0,0,0,0)');
+    g.addColorStop(1,'rgba(0,0,0,' + (clamp(p.vignette,0,100)/100*0.75) + ')');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+  }
+}
+function makeCanvas(w,h){ const c = document.createElement('canvas'); c.width = Math.max(1,Math.round(w)); c.height = Math.max(1,Math.round(h)); return c; }
+function shrink(src, side){
+  const k = Math.min(1, side/Math.max(src.width, src.height));
+  const c = makeCanvas(src.width*k, src.height*k);
+  const x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
+  x.drawImage(src,0,0,c.width,c.height);
+  return c;
+}
+
+/* ---------- text and drawing layers ---------- */
+function textBox(ctx, it, h){
+  const f = FONTS.find(x => x.id === it.font) || FONTS[0], px = it.size*h;
+  ctx.font = (it.bold ? 700 : 400) + ' ' + px + 'px ' + f.css;
+  const lines = it.text.split('\n');
+  let w = 0; for (const ln of lines) w = Math.max(w, ctx.measureText(ln).width);
+  return {lines, w, lh: px*1.2, h: lines.length*px*1.2, px};
+}
+function drawItems(ctx, items, w, h){
+  for (const it of items){
+    ctx.save();
+    if (it.type === 'stroke'){
+      const p = it.pts;
+      ctx.strokeStyle = ctx.fillStyle = it.color;
+      ctx.lineCap = ctx.lineJoin = 'round';
+      ctx.lineWidth = Math.max(1, it.width*Math.min(w,h));
+      ctx.beginPath();
+      if (p.length === 1){ ctx.arc(p[0][0]*w, p[0][1]*h, ctx.lineWidth/2, 0, Math.PI*2); ctx.fill(); }
+      else {
+        ctx.moveTo(p[0][0]*w, p[0][1]*h);
+        for (let i = 1; i < p.length - 1; i++)
+          ctx.quadraticCurveTo(p[i][0]*w, p[i][1]*h, (p[i][0]+p[i+1][0])/2*w, (p[i][1]+p[i+1][1])/2*h);
+        const l = p[p.length-1]; ctx.lineTo(l[0]*w, l[1]*h); ctx.stroke();
+      }
+    } else if (it.text){
+      const b = textBox(ctx, it, h);
+      ctx.translate(it.x*w, it.y*h); ctx.rotate(it.rot);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = it.color;
+      if (it.shadow){ ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = b.px*0.14; ctx.shadowOffsetY = b.px*0.04; }
+      b.lines.forEach((ln,i) => ctx.fillText(ln, 0, (i - (b.lines.length-1)/2)*b.lh));
+    }
+    ctx.restore();
+  }
+}
+function drawSelection(ctx, it, w, h){
+  const b = textBox(ctx, it, h), pad = b.px*0.25, bw = Math.max(b.w, b.px) + pad*2, bh = b.h + pad*2;
+  ctx.save();
+  ctx.translate(it.x*w, it.y*h); ctx.rotate(it.rot);
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.strokeRect(-bw/2, -bh/2, bw, bh);
+  ctx.lineWidth = 1.5; ctx.strokeStyle = '#c04bf0'; ctx.setLineDash([7,5]); ctx.strokeRect(-bw/2, -bh/2, bw, bh);
+  ctx.restore();
+}
+
+/* ---------- rendering ---------- */
+// render() recomputes the adjusted photo; draw() only repaints the layers on top of it.
+const fx = makeCanvas(1,1), fxctx = fx.getContext('2d', {willReadFrequently:true});
+let queued = false, fxDirty = true;
+function render(){ fxDirty = true; draw(); }
+function draw(){
+  if (queued) return; queued = true;
+  requestAnimationFrame(() => {
+    queued = false;
+    if (!st.base) return;
+    const src = comparing ? origSmall : baseSmall, w = src.width, h = src.height;
+    if (view.width !== w || view.height !== h){ view.width = w; view.height = h; }
+    vctx.clearRect(0,0,w,h);
+    if (comparing){ vctx.drawImage(src,0,0); return; }
+    if (fxDirty){
+      if (fx.width !== w || fx.height !== h){ fx.width = w; fx.height = h; }
+      paint(fxctx, src, 0, 0, w, h, w, h, effective());
+      fxDirty = false;
+    }
+    vctx.drawImage(fx,0,0);
+    drawItems(vctx, st.items, w, h);
+    if (mode === 'text' && st.items[sel]) drawSelection(vctx, st.items[sel], w, h);
+  });
+}
+function layout(){
+  const src = comparing ? original : st.base;
+  if (!src) return;
+  const pad = mode === 'crop' ? 26 : 14;
+  const sw = stage.clientWidth - pad*2, sh = stage.clientHeight - pad*2;
+  const k = Math.max(0.01, Math.min(sw/src.width, sh/src.height));
+  frame.style.width = src.width*k + 'px';
+  frame.style.height = src.height*k + 'px';
+}
+new ResizeObserver(layout).observe(stage);
+
+function baseChanged(){
+  baseSmall = shrink(st.base, PREVIEW_SIDE);
+  sel = -1; syncText();
+  resetCrop();
+  layout(); buildThumbs(); render();
+}
+
+/* ---------- history ---------- */
+function commit(){
+  hist = hist.slice(0, hi+1);
+  hist.push({base:st.base, adj:{...st.adj}, look:st.look, items:st.items.map(o => ({...o}))});
+  if (hist.length > HISTORY) hist.shift();
+  hi = hist.length - 1;
+  syncUI();
+}
+function restore(i){
+  if (i < 0 || i >= hist.length) return;
+  hi = i;
+  const h = hist[i], changed = h.base !== st.base;
+  st = {base:h.base, adj:{...h.adj}, look:h.look, items:h.items.map(o => ({...o}))};
+  sel = -1; syncText();
+  if (changed) baseChanged(); else render();
+  syncUI();
+}
+function syncUI(){
+  $('#undo').disabled = hi <= 0;
+  $('#redo').disabled = hi >= hist.length - 1;
+  for (const a of ADJ) setSlider(a, st.adj[a.key]);
+  document.querySelectorAll('#looks button').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === st.look));
+}
+
+/* ---------- opening photos ---------- */
+function loadFile(file){
+  if (!file) return;
+  if (!file.type.startsWith('image/')){ toast('That file is not an image. Choose a JPEG, PNG or WebP photo.'); return; }
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    const k = Math.min(1, MAX_SIDE/Math.max(img.naturalWidth, img.naturalHeight));
+    const c = makeCanvas(img.naturalWidth*k, img.naturalHeight*k);
+    const x = c.getContext('2d'); x.imageSmoothingQuality = 'high';
+    x.drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(url);
+    fileName = (file.name || 'photo').replace(/\.[^.]+$/, '') || 'photo';
+    original = c; origSmall = shrink(c, PREVIEW_SIDE);
+    st = {base:c, adj:zero(), look:'original', items:[]};
+    hist = []; hi = -1;
+    document.body.classList.add('has-image');
+    $('#empty').hidden = true; frame.hidden = false;
+    baseChanged(); commit();
+    if (k < 1) toast('Large photo resized to ' + c.width + ' × ' + c.height + ' for editing');
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('This photo could not be opened. Try a JPEG, PNG or WebP file.'); };
+  img.src = url;
+}
+const fileInput = $('#file');
+$('#open').onclick = $('#openBig').onclick = () => fileInput.click();
+fileInput.onchange = () => { loadFile(fileInput.files[0]); fileInput.value = ''; };
+['dragenter','dragover'].forEach(t => stage.addEventListener(t, e => { e.preventDefault(); stage.classList.add('drop'); }));
+['dragleave','drop'].forEach(t => stage.addEventListener(t, e => { e.preventDefault(); stage.classList.remove('drop'); }));
+stage.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+addEventListener('paste', e => {
+  const it = [...(e.clipboardData ? e.clipboardData.items : [])].find(i => i.type.startsWith('image/'));
+  if (it) loadFile(it.getAsFile());
+});
+if ('launchQueue' in window) launchQueue.setConsumer(async p => { if (p.files && p.files.length) loadFile(await p.files[0].getFile()); });
+
+/* ---------- adjust ---------- */
+const sliderEls = {};
+function setSlider(a, v){
+  const {input, val} = sliderEls[a.key];
+  input.value = v;
+  val.textContent = (v > 0 && a.min < 0 ? '+' : '') + v;
+  const span = a.max - a.min, p = (v - a.min)/span*100, o = (0 - a.min)/span*100;
+  input.style.setProperty('--a', Math.min(p,o) + '%');
+  input.style.setProperty('--b', Math.max(p,o) + '%');
+}
+for (const a of ADJ){
+  const row = document.createElement('div'); row.className = 'row';
+  row.innerHTML = '<label for="s-' + a.key + '">' + a.label + '</label>' +
+    '<button class="val" title="Reset ' + a.label.toLowerCase() + '" aria-label="Reset ' + a.label.toLowerCase() + '">0</button>' +
+    '<input type="range" id="s-' + a.key + '" min="' + a.min + '" max="' + a.max + '" value="0">';
+  const input = row.querySelector('input'), val = row.querySelector('.val');
+  sliderEls[a.key] = {input, val};
+  input.addEventListener('input', () => { st.adj[a.key] = +input.value; setSlider(a, st.adj[a.key]); render(); });
+  input.addEventListener('change', commit);
+  val.onclick = () => { if (st.adj[a.key]){ st.adj[a.key] = 0; render(); commit(); } };
+  $('#sliders').appendChild(row);
+  setSlider(a, 0);
+}
+$('#resetAdj').onclick = () => { if (ADJ.some(a => st.adj[a.key])){ st.adj = zero(); render(); commit(); } };
+
+/* ---------- filters ---------- */
+function buildThumbs(){
+  const box = $('#looks'), first = !box.children.length, S = 120;
+  const s = Math.min(baseSmall.width, baseSmall.height);
+  const sx = (baseSmall.width - s)/2, sy = (baseSmall.height - s)/2;
+  for (const l of LOOKS){
+    let btn = box.querySelector('[data-id="' + l.id + '"]');
+    if (first){
+      btn = document.createElement('button'); btn.dataset.id = l.id;
+      const c = makeCanvas(S,S); btn.append(c, l.name);
+      btn.onclick = () => { if (st.look !== l.id){ st.look = l.id; render(); commit(); } };
+      box.appendChild(btn);
+    }
+    const c = btn.querySelector('canvas');
+    paint(c.getContext('2d', {willReadFrequently:true}), baseSmall, sx, sy, s, s, S, S, {...zero(), ...l.p});
+  }
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  mode = b.dataset.tab;
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  for (const t of ['adjust','filters','crop','text','draw']) $('#pane-' + t).hidden = t !== mode;
+  if (mode === 'crop') resetCrop();
+  cropEl.hidden = mode !== 'crop';
+  frame.classList.toggle('touch', mode === 'text' || mode === 'draw');
+  frame.classList.toggle('pen', mode === 'draw');
+  select(-1);
+  layout();
+});
+
+/* ---------- crop ---------- */
+function ratioValue(){ return ratio === 'free' ? null : ratio === 'orig' ? original.width/original.height : +ratio; }
+function resetCrop(){
+  const R = ratioValue();
+  if (!R || !st.base){ crop = {x:0,y:0,w:1,h:1}; }
+  else {
+    const br = st.base.width/st.base.height;
+    const w = R > br ? 1 : R/br, h = R > br ? br/R : 1;
+    crop = {x:(1-w)/2, y:(1-h)/2, w, h};
+  }
+  drawCrop();
+}
+function drawCrop(){
+  cropEl.style.left = crop.x*100 + '%'; cropEl.style.top = crop.y*100 + '%';
+  cropEl.style.width = crop.w*100 + '%'; cropEl.style.height = crop.h*100 + '%';
+}
+document.querySelectorAll('#ratios button').forEach(b => b.onclick = () => {
+  ratio = b.dataset.r;
+  document.querySelectorAll('#ratios button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  resetCrop();
+});
+let drag = null;
+cropEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  const r = frame.getBoundingClientRect();
+  const px = (e.clientX - r.left)/r.width, py = (e.clientY - r.top)/r.height;
+  const h = e.target.dataset.h;
+  drag = h
+    ? {h, ax: h.includes('w') ? crop.x + crop.w : crop.x, ay: h.includes('n') ? crop.y + crop.h : crop.y}
+    : {ox: px - crop.x, oy: py - crop.y};
+  cropEl.setPointerCapture(e.pointerId);
+});
+cropEl.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const r = frame.getBoundingClientRect();
+  const px = clamp((e.clientX - r.left)/r.width, 0, 1), py = clamp((e.clientY - r.top)/r.height, 0, 1);
+  if (!drag.h){
+    crop.x = clamp((e.clientX - r.left)/r.width - drag.ox, 0, 1 - crop.w);
+    crop.y = clamp((e.clientY - r.top)/r.height - drag.oy, 0, 1 - crop.h);
+  } else {
+    const sx = drag.h.includes('e') ? 1 : -1, sy = drag.h.includes('s') ? 1 : -1, MIN = 0.06;
+    let w = Math.max(MIN, sx*(px - drag.ax)), h = Math.max(MIN, sy*(py - drag.ay));
+    const R = ratioValue();
+    if (R){
+      const k = st.base.width/(R*st.base.height);   // normalised height per normalised width
+      const availH = sy > 0 ? 1 - drag.ay : drag.ay, availW = sx > 0 ? 1 - drag.ax : drag.ax;
+      w = Math.min(w, availW); h = w*k;
+      if (h > availH){ h = availH; w = h/k; }
+    }
+    crop = {x: sx > 0 ? drag.ax : drag.ax - w, y: sy > 0 ? drag.ay : drag.ay - h, w, h};
+  }
+  drawCrop();
+});
+['pointerup','pointercancel'].forEach(t => cropEl.addEventListener(t, () => { drag = null; }));
+
+function replaceBase(c, items){ st.base = c; st.items = items; baseChanged(); commit(); }
+$('#applyCrop').onclick = () => {
+  if (crop.w > 0.995 && crop.h > 0.995){ toast('Drag the corners to choose the area to keep'); return; }
+  const b = st.base, x = Math.round(crop.x*b.width), y = Math.round(crop.y*b.height);
+  const w = Math.max(1, Math.round(crop.w*b.width)), h = Math.max(1, Math.round(crop.h*b.height));
+  const c = makeCanvas(w,h);
+  c.getContext('2d').drawImage(b, x, y, w, h, 0, 0, w, h);
+  const P = ([px,py]) => [(px*b.width - x)/w, (py*b.height - y)/h];
+  const thick = Math.min(b.width,b.height)/Math.min(w,h);
+  replaceBase(c, st.items.map(it => {
+    if (it.type === 'stroke') return {...it, pts: it.pts.map(P), width: it.width*thick};
+    const [nx,ny] = P([it.x,it.y]);
+    return {...it, x:nx, y:ny, size: it.size*b.height/h};
+  }));
+};
+function rotate(dir){
+  const b = st.base, c = makeCanvas(b.height, b.width), x = c.getContext('2d');
+  x.translate(c.width/2, c.height/2); x.rotate(dir*Math.PI/2);
+  x.drawImage(b, -b.width/2, -b.height/2);
+  const P = dir > 0 ? ([px,py]) => [1-py, px] : ([px,py]) => [py, 1-px];
+  replaceBase(c, st.items.map(it => {
+    if (it.type === 'stroke') return {...it, pts: it.pts.map(P)};
+    const [nx,ny] = P([it.x,it.y]);
+    return {...it, x:nx, y:ny, size: it.size*b.height/b.width, rot: it.rot + dir*Math.PI/2};
+  }));
+}
+function flip(horizontal){
+  const b = st.base, c = makeCanvas(b.width, b.height), x = c.getContext('2d');
+  if (horizontal){ x.translate(c.width,0); x.scale(-1,1); } else { x.translate(0,c.height); x.scale(1,-1); }
+  x.drawImage(b,0,0);
+  const P = horizontal ? ([px,py]) => [1-px, py] : ([px,py]) => [px, 1-py];
+  replaceBase(c, st.items.map(it => {
+    if (it.type === 'stroke') return {...it, pts: it.pts.map(P)};
+    const [nx,ny] = P([it.x,it.y]);
+    return {...it, x:nx, y:ny, rot: -it.rot};
+  }));
+}
+$('#rotL').onclick = () => rotate(-1);
+$('#rotR').onclick = () => rotate(1);
+$('#flipH').onclick = () => flip(true);
+$('#flipV').onclick = () => flip(false);
+
+/* ---------- text and draw tools ---------- */
+function bindRange(id, origin, onInput, onChange){
+  const el = $(id), val = el.parentNode.querySelector('.val'), min = +el.min, span = el.max - el.min;
+  const fill = () => {
+    const p = (el.value - min)/span*100, o = (origin - min)/span*100;
+    el.style.setProperty('--a', Math.min(p,o) + '%'); el.style.setProperty('--b', Math.max(p,o) + '%');
+    val.textContent = el.value;
+  };
+  el.addEventListener('input', () => { fill(); onInput(+el.value); });
+  el.addEventListener('change', () => onChange && onChange());
+  fill();
+  return v => { el.value = v; fill(); };
+}
+function makeSwatches(box, onPick){
+  for (const [c,name] of COLORS){
+    const b = document.createElement('button');
+    b.style.setProperty('--c', c); b.dataset.c = c; b.title = name; b.setAttribute('aria-label', name);
+    b.onclick = () => onPick(c, true);
+    box.appendChild(b);
+  }
+  const l = document.createElement('label'); l.className = 'pick'; l.title = 'Pick another color';
+  const i = document.createElement('input'); i.type = 'color'; i.setAttribute('aria-label', 'Pick another color');
+  i.addEventListener('input', () => onPick(i.value, false));
+  i.addEventListener('change', () => onPick(i.value, true));
+  l.appendChild(i); box.appendChild(l);
+}
+const markSwatch = (box, c) => box.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.c === c));
+
+const cur = () => st.items[sel];
+function select(i){
+  const keep = i >= 0 ? st.items[i] : null;
+  st.items = st.items.filter(o => o.type !== 'text' || o.text.trim() || o === keep);   // drop emptied text
+  sel = keep ? st.items.indexOf(keep) : -1;
+  syncText(); draw();
+}
+function syncText(){
+  const it = cur();
+  $('#textEdit').hidden = !it;
+  $('#textHint').hidden = !!it || !st.items.some(o => o.type === 'text');
+  if (!it) return;
+  $('#tText').value = it.text;
+  document.querySelectorAll('#tFonts button').forEach(b => b.setAttribute('aria-pressed', b.dataset.f === it.font));
+  markSwatch($('#tColors'), it.color);
+  setTSize(Math.round(it.size*100));
+  let deg = Math.round(it.rot*180/Math.PI) % 360; if (deg > 180) deg -= 360; if (deg <= -180) deg += 360;
+  setTAngle(deg);
+  $('#tBold').setAttribute('aria-pressed', it.bold);
+  $('#tShadow').setAttribute('aria-pressed', it.shadow);
+}
+$('#addText').onclick = () => {
+  select(-1);
+  st.items.push({type:'text', text:'Your text', x:.5, y:.5, size:textDefaults.size/100, rot:0,
+    font:textDefaults.font, color:textDefaults.color, bold:textDefaults.bold, shadow:textDefaults.shadow});
+  sel = st.items.length - 1;
+  syncText(); draw(); commit();
+  const t = $('#tText'); t.focus(); t.select();
+};
+$('#tText').addEventListener('input', e => { if (cur()){ cur().text = e.target.value; draw(); } });
+$('#tText').addEventListener('change', () => { if (cur()) commit(); });
+for (const f of FONTS){
+  const b = document.createElement('button'); b.textContent = f.name; b.dataset.f = f.id; b.style.fontFamily = f.css;
+  b.onclick = () => { if (!cur()) return; cur().font = textDefaults.font = f.id; syncText(); draw(); commit(); };
+  $('#tFonts').appendChild(b);
+}
+makeSwatches($('#tColors'), (c, done) => {
+  if (!cur()) return;
+  cur().color = textDefaults.color = c; markSwatch($('#tColors'), c); draw();
+  if (done) commit();
+});
+const setTSize = bindRange('#tSize', 2, v => { if (cur()){ cur().size = v/100; textDefaults.size = v; draw(); } }, () => cur() && commit());
+const setTAngle = bindRange('#tAngle', 0, v => { if (cur()){ cur().rot = v*Math.PI/180; draw(); } }, () => cur() && commit());
+for (const [id,key] of [['#tBold','bold'],['#tShadow','shadow']]){
+  $(id).onclick = () => { if (!cur()) return; cur()[key] = textDefaults[key] = !cur()[key]; syncText(); draw(); commit(); };
+}
+$('#tDelete').onclick = () => { if (!cur()) return; st.items.splice(sel,1); sel = -1; syncText(); draw(); commit(); };
+
+makeSwatches($('#pColors'), c => { pen.color = c; markSwatch($('#pColors'), c); });
+markSwatch($('#pColors'), pen.color);
+bindRange('#pSize', 2, v => { pen.size = v; });
+$('#pUndo').onclick = () => {
+  for (let i = st.items.length - 1; i >= 0; i--) if (st.items[i].type === 'stroke'){ st.items.splice(i,1); draw(); commit(); return; }
+};
+$('#pClear').onclick = () => {
+  if (!st.items.some(o => o.type === 'stroke')) return;
+  st.items = st.items.filter(o => o.type !== 'stroke'); draw(); commit();
+};
+
+const at = e => { const r = view.getBoundingClientRect(); return [(e.clientX - r.left)/r.width, (e.clientY - r.top)/r.height]; };
+function hitText(nx, ny){
+  const w = view.width, h = view.height;
+  for (let i = st.items.length - 1; i >= 0; i--){
+    const it = st.items[i]; if (it.type !== 'text') continue;
+    const b = textBox(vctx, it, h), pad = b.px*0.35;
+    const dx = (nx - it.x)*w, dy = (ny - it.y)*h, c = Math.cos(-it.rot), s = Math.sin(-it.rot);
+    if (Math.abs(dx*c - dy*s) <= Math.max(b.w, b.px)/2 + pad && Math.abs(dx*s + dy*c) <= b.h/2 + pad) return i;
+  }
+  return -1;
+}
+view.addEventListener('pointerdown', e => {
+  if (comparing || (mode !== 'text' && mode !== 'draw')) return;
+  e.preventDefault();
+  const [nx,ny] = at(e);
+  if (mode === 'text'){
+    const i = hitText(nx,ny);
+    select(i);
+    if (sel < 0) return;
+    ptr = {kind:'move', ox: nx - cur().x, oy: ny - cur().y, moved:false};
+  } else {
+    const s = {type:'stroke', color:pen.color, width:pen.size/1000, pts:[[nx,ny]]};
+    st.items.push(s); ptr = {kind:'draw', s}; draw();
+  }
+  view.setPointerCapture(e.pointerId);
+});
+view.addEventListener('pointermove', e => {
+  if (!ptr) return;
+  const [nx,ny] = at(e);
+  if (ptr.kind === 'move'){
+    const it = cur(); if (!it) return;
+    it.x = clamp(nx - ptr.ox, 0, 1); it.y = clamp(ny - ptr.oy, 0, 1); ptr.moved = true;
+  } else {
+    const p = ptr.s.pts, l = p[p.length-1];
+    if (Math.hypot((nx - l[0])*view.width, (ny - l[1])*view.height) < 1.5) return;
+    p.push([nx,ny]);
+  }
+  draw();
+});
+['pointerup','pointercancel'].forEach(t => view.addEventListener(t, () => {
+  if (!ptr) return;
+  if (ptr.kind === 'draw' || ptr.moved) commit();
+  ptr = null;
+}));
+
+/* ---------- top bar ---------- */
+$('#undo').onclick = () => restore(hi - 1);
+$('#redo').onclick = () => restore(hi + 1);
+$('#reset').onclick = () => {
+  const h = hist[hi];
+  if (h && h.base === original && h.look === 'original' && !h.items.length && ADJ.every(a => !h.adj[a.key])) return;
+  st = {base:original, adj:zero(), look:'original', items:[]};
+  baseChanged(); commit(); toast('All edits removed');
+};
+const cmp = $('#compare');
+function setCompare(on){
+  if (!st.base || comparing === on) return;
+  comparing = on;
+  cropEl.hidden = on || mode !== 'crop';
+  layout(); render();
+}
+cmp.addEventListener('pointerdown', e => { cmp.setPointerCapture(e.pointerId); setCompare(true); });
+['pointerup','pointercancel','lostpointercapture','blur'].forEach(t => cmp.addEventListener(t, () => setCompare(false)));
+cmp.addEventListener('keydown', e => { if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); setCompare(true); } });
+cmp.addEventListener('keyup', () => setCompare(false));
+
+addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'o'){ e.preventDefault(); fileInput.click(); }
+  else if (!st.base || saveDlg.open || shareDlg.open || e.target.matches('textarea,input[type=text]')) return;
+  else if (k === 'z'){ e.preventDefault(); restore(e.shiftKey ? hi + 1 : hi - 1); }
+  else if (k === 'y'){ e.preventDefault(); restore(hi + 1); }
+  else if (k === 's'){ e.preventDefault(); openSave(); }
+});
+
+/* ---------- saving ---------- */
+const saveDlg = $('#saveDlg');
+let format = 'image/jpeg';
+const EXT = {'image/jpeg':'jpg','image/png':'png','image/webp':'webp'};
+function openSave(){
+  select(-1);
+  $('#fname').value = fileName + '-gopix';
+  $('#saveDim').textContent = st.base.width + ' × ' + st.base.height + ' pixels';
+  saveDlg.showModal();
+}
+$('#save').onclick = openSave;
+$('#saveCancel').onclick = () => saveDlg.close();
+document.querySelectorAll('#formats button').forEach(b => b.onclick = () => {
+  format = b.dataset.f;
+  document.querySelectorAll('#formats button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  $('#qField').hidden = format === 'image/png';
+});
+const q = $('#quality');
+function syncQ(){ $('#qVal').textContent = q.value; q.style.setProperty('--a','0%'); q.style.setProperty('--b', (q.value-40)/60*100 + '%'); }
+q.oninput = syncQ; syncQ();
+
+function exportBlob(type, quality){
+  return new Promise((res, rej) => {
+    const b = st.base, w = b.width, h = b.height;
+    let c = makeCanvas(w,h);
+    paint(c.getContext('2d', {willReadFrequently:true}), b, 0, 0, w, h, w, h, effective());
+    drawItems(c.getContext('2d'), st.items, w, h);
+    if (type === 'image/jpeg'){            // JPEG has no transparency: put the photo on white
+      const j = makeCanvas(w,h), x = j.getContext('2d');
+      x.fillStyle = '#fff'; x.fillRect(0,0,w,h); x.drawImage(c,0,0); c = j;
+    }
+    c.toBlob(blob => blob ? res(blob) : rej(new Error('encode')), type, quality);
+  });
+}
+function outName(blob){
+  const n = ($('#fname').value.trim() || 'photo').replace(/[\\/:*?"<>|]+/g,'-');
+  return n + '.' + (EXT[blob.type] || EXT[format]);
+}
+async function withBusy(btn, label, fn){
+  const old = btn.textContent; btn.disabled = true; btn.textContent = label;
+  await new Promise(r => setTimeout(r, 30));
+  try { await fn(); }
+  catch (err){ if (!err || err.name !== 'AbortError') toast('The photo could not be saved. Try PNG or a smaller crop.'); }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
+$('#saveGo').onclick = e => withBusy(e.currentTarget, 'Saving…', async () => {
+  const blob = await exportBlob(format, q.value/100), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = outName(blob);
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  saveDlg.close(); toast('Photo saved');
+});
+/* ---------- sharing ---------- */
+const shareDlg = $('#shareDlg'), shareGo = $('#shareGo');
+let shareFile = null;
+function openShare(){
+  select(-1);
+  shareFile = null;
+  shareGo.hidden = false; shareGo.disabled = true; shareGo.textContent = 'Preparing photo…';
+  $('#shareCopy').hidden = !(window.ClipboardItem && navigator.clipboard && navigator.clipboard.write);
+  $('#shareMsg').textContent = 'Getting your photo ready.';
+  shareDlg.showModal();
+  // The photo is prepared first so the share sheet can open the instant you tap the button.
+  setTimeout(() => exportBlob('image/jpeg', 0.92).then(blob => {
+    shareFile = new File([blob], fileName + '-gopix.jpg', {type:'image/jpeg'});
+    let ok = false;
+    try { ok = !!(navigator.canShare && navigator.canShare({files:[shareFile]})); } catch (_) {}
+    if (ok){
+      shareGo.disabled = false; shareGo.textContent = 'Share to apps';
+      $('#shareMsg').textContent = 'Opens your device’s share sheet, where you can pick Instagram, WhatsApp or any other app.';
+    } else {
+      shareGo.hidden = true;
+      $('#shareMsg').textContent = 'This browser cannot send photos straight to other apps. Copy the photo and paste it into WhatsApp, or save it and upload it to Instagram. On a phone, GoPix shares directly to your apps.';
+    }
+  }).catch(() => { shareDlg.close(); toast('The photo could not be prepared for sharing.'); }), 30);
+}
+$('#shareTop').onclick = openShare;
+$('#shareClose').onclick = () => shareDlg.close();
+$('#shareSave').onclick = () => { shareDlg.close(); openSave(); };
+shareGo.onclick = () => {
+  if (!shareFile) return;
+  navigator.share({files:[shareFile], title:'GoPix photo'})
+    .then(() => shareDlg.close())
+    .catch(err => { if (!err || err.name !== 'AbortError') toast('Sharing did not work. Save the photo and share it from your gallery.'); });
+};
+$('#shareCopy').onclick = async () => {
+  try {
+    await navigator.clipboard.write([new ClipboardItem({'image/png': exportBlob('image/png')})]);
+    shareDlg.close(); toast('Photo copied. Paste it into a chat.');
+  } catch (_) { toast('This browser cannot copy photos. Save the photo instead.'); }
+};
+
+/* ---------- toast ---------- */
+let toastTimer;
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 3200);
+}
+
+/* ---------- PWA ---------- */
+let installEvt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('#install').hidden = false; });
+$('#install').onclick = async () => {
+  if (!installEvt) return;
+  installEvt.prompt(); await installEvt.userChoice;
+  installEvt = null; $('#install').hidden = true;
+};
+addEventListener('appinstalled', () => { $('#install').hidden = true; toast('GoPix installed'); });
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+})();
+</script>
+</body>
+</html>
